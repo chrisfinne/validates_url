@@ -12,8 +12,9 @@ module ActiveModel
         options.reverse_merge!(schemes: %w(http https))
         options.reverse_merge!(message: :url)
         options.reverse_merge!(no_local: false)
-        options.reverse_merge!(public_suffix: false)
+        options.reverse_merge!(public_suffix: false) # will error on IPv4 Addresses
         options.reverse_merge!(accept_array: false)
+        options.reverse_merge!(no_private_ips: false)
 
         super(options)
       end
@@ -58,13 +59,23 @@ module ActiveModel
         valid_scheme = host && scheme && schemes.include?(scheme)
         valid_no_local = !options.fetch(:no_local) || (host && host.include?('.'))
         valid_suffix = !options.fetch(:public_suffix) || (host && PublicSuffix.valid?(host, :default_rule => nil))
+        valid_no_private_ips = !options.fetch(:no_private_ips) || (host && host_is_ipv4_and_has_private_ips?(host))
 
-        unless valid_raw_url && valid_scheme && valid_no_local && valid_suffix
+        unless valid_raw_url && valid_scheme && valid_no_local && valid_suffix && valid_no_private_ips
           record.errors.add(attribute, options.fetch(:message), value: value)
         end
       rescue URI::InvalidURIError, URI::InvalidComponentError
         record.errors.add(attribute, :url, **filtered_options(value))
       end
+
+      private
+
+      def host_is_ipv4_and_has_private_ips?(host)
+        return true unless /\A[\d\.]+\z/.match?(host) # if host is only dots and digits, then it is attempting to be an IPv4
+        ip = IPAddr.new(host) rescue nil # If attempting to be an IPv4, then validate it is a real one
+        ip && !ip.loopback? && !ip.private?
+      end
+
     end
 
     module ClassMethods
